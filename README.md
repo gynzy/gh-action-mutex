@@ -43,9 +43,48 @@ jobs:
 
 More options such as using a different repo to store the mutex (which allows sharing a mutex between jobs from arbitrary repos) or using different access tokens can be found in [action.yml](./action.yml).
 
+### Timeout and Cleanup
+
+You can specify a timeout for how long to wait for the mutex before giving up:
+
+```yaml
+jobs:
+  run_with_timeout:
+    runs-on: ubuntu-latest
+    name: Mutex with timeout
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up mutex
+        uses: ben-z/gh-action-mutex@v1.0.0-alpha.10
+        with:
+          timeout: 60  # Wait for 60 seconds before timing out
+      - run: |
+          echo "I am protected with a timeout!"
+```
+
+If the timeout is reached, the action will fail by default. However, you can enable the `cleanup-mutex-on-timeout` option to clean up the mutex branch and attempt to acquire the lock again:
+
+```yaml
+jobs:
+  run_with_cleanup:
+    runs-on: ubuntu-latest
+    name: Mutex with cleanup on timeout
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up mutex
+        uses: ben-z/gh-action-mutex@v1.0.0-alpha.10
+        with:
+          timeout: 60  # Wait for 60 seconds before timing out
+          cleanup-mutex-on-timeout: true  # Clean up mutex branch on timeout and retry
+      - run: |
+          echo "I am protected with timeout and cleanup!"
+```
+
+This is useful in situations where a previous job might have failed without properly releasing the mutex.
+
 ### GitHub Enterprise Server
 
-It might be necessary to adjust the GitHub Server URL in case you are using a GitHub Enterprise Server. You can adjust the server URL by providing `github_server` input to the action. Please make sure to not include the `https://`. 
+It might be necessary to adjust the GitHub Server URL in case you are using a GitHub Enterprise Server. You can adjust the server URL by providing `github_server` input to the action. Please make sure to not include the `https://`.
 
 ## Motivation
 
@@ -64,4 +103,3 @@ Mutexes are implemented using simple [spinlocks](https://en.wikipedia.org/wiki/S
 ## Inspirations
 
 - [actions/checkout](https://github.com/actions/checkout) for the authentication logic using `GITHUB_TOKEN`.
-

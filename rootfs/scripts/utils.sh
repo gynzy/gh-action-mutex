@@ -61,15 +61,67 @@ enqueue() {
 	fi
 }
 
+# Cleanup mutex branch
+# args:
+#   $1: branch
+#   $2: queue_file
+#   $3: ticket_id
+cleanup_mutex_branch() {
+	__branch=$1
+	__queue_file=$2
+	__ticket_id=$3
+
+	echo "[$__ticket_id] Cleaning up mutex branch $__branch"
+
+	# Create a new orphan branch to replace the current one
+	git switch --orphan gh-action-mutex/temp-branch-$(date +%s) --quiet
+
+	# Create an empty queue file
+	touch $__queue_file
+
+	git add $__queue_file
+	git commit -m "[$__ticket_id] Reset mutex branch" --quiet
+
+	# Force push to replace the branch
+	git push -f --set-upstream origin HEAD:$__branch --quiet
+
+	# Checkout the branch again
+	git checkout $__branch --quiet || git switch --orphan $__branch --quiet
+
+	echo "[$__ticket_id] Mutex branch cleanup completed"
+}
+
 # Wait for the lock to become available
 # args:
 #   $1: branch
 #   $2: queue_file
 #   $3: ticket_id
+#   $4: start_time (optional, used for timeout calculation)
 wait_for_lock() {
 	__branch=$1
 	__queue_file=$2
 	__ticket_id=$3
+	__start_time=${4:-$(date +%s)}
+	__current_time=$(date +%s)
+	__elapsed_time=$((__current_time - __start_time))
+
+	# Check if we've exceeded the timeout
+	if [ -n "$ARG_TIMEOUT" ] && [ $__elapsed_time -ge $ARG_TIMEOUT ]; then
+		echo "[$__ticket_id] Timeout reached after $__elapsed_time seconds"
+
+		if [ "$ARG_CLEANUP_MUTEX_ON_TIMEOUT" = "true" ]; then
+			echo "[$__ticket_id] cleanup-mutex-on-timeout is enabled, cleaning up mutex branch and retrying"
+			cleanup_mutex_branch $__branch $__queue_file $__ticket_id
+			# Re-enqueue ourselves after cleanup
+			enqueue $__branch $__queue_file $__ticket_id
+			# Reset the start time for a new attempt
+			wait_for_lock $__branch $__queue_file $__ticket_id $(date +%s)
+			return
+		else
+			echo "[$__ticket_id] cleanup-mutex-on-timeout is disabled, exiting with error"
+			exit 1
+		fi
+	fi
 
 	update_branch $__branch
 
@@ -77,12 +129,15 @@ wait_for_lock() {
 	if [ -s $__queue_file ]; then
 		cur_lock=$(head -n 1 $__queue_file)
 		if [ "$cur_lock" != "$__ticket_id" ]; then
-			echo "[$__ticket_id] Waiting for lock - Current lock assigned to [$cur_lock]"
+			echo "[$__ticket_id] Waiting for lock - Current lock assigned to [$cur_lock] (elapsed time: $__elapsed_time seconds)"
 			sleep 5
-			wait_for_lock $@
+			wait_for_lock $__branch $__queue_file $__ticket_id $__start_time
 		fi
 	else
-		echo "[$__ticket_id] $__queue_file unexpectedly empty, continuing"
+		echo "[$__ticket_id] $__queue_file unexpectedly empty, requeuing for the lock"
+		# Requeue ourselves
+		enqueue $__branch $__queue_file $__ticket_id
+		wait_for_lock $__branch $__mutex_queue_file $__ticket_id $(date +%s)
 	fi
 }
 # Remove from the queue, when locked by it or just enqueued
@@ -128,4 +183,3 @@ dequeue() {
 		dequeue $@
 	fi
 }
-
