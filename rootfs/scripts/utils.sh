@@ -184,6 +184,14 @@ wait_for_lock() {
 
 	update_branch $__branch
 
+	# Check if cleanup is in progress
+	if grep -q "^CLEANUP_IN_PROGRESS:" "$__queue_file" 2>/dev/null; then
+		echo "[$__ticket_id] Cleanup in progress detected, resetting timeout counter"
+		# Reset the start time to give the cleanup process time to complete
+		wait_for_lock $__branch $__queue_file $__ticket_id $(date +%s)
+		return
+	fi
+
 	# if we are not the first in line, spin
 	if [ -s $__queue_file ]; then
 		cur_lock=$(head -n 1 $__queue_file)
