@@ -79,11 +79,14 @@ cleanup_mutex_branch() {
 
 	# Check if cleanup is already in progress by another process
 	if grep -q "^CLEANUP_IN_PROGRESS:" "$__queue_file" 2>/dev/null; then
-		echo "[$__ticket_id] Cleanup already in progress by another process, waiting..."
-		sleep 5
-		# Retry cleanup
-		cleanup_mutex_branch $__branch $__queue_file $__ticket_id
-		return
+		# If we can extract a timestamp and it's more than 5 minutes old, assume the cleanup job failed
+		if [ -n "$__cleanup_timestamp" ] && [ $((__current_timestamp - __cleanup_timestamp)) -gt 300 ]; then
+			echo "[$__ticket_id] Found stale cleanup lock (>5 minutes old), assuming previous cleanup job failed. Taking over cleanup..."
+			# Continue with cleanup (don't return)
+		else
+			echo "[$__ticket_id] Another process is actively cleaning up. We will not cleanup ourselves..."
+			return
+		fi
 	fi
 
 	# Mark cleanup in progress with our unique ID
@@ -187,6 +190,8 @@ wait_for_lock() {
 	# Check if cleanup is in progress
 	if grep -q "^CLEANUP_IN_PROGRESS:" "$__queue_file" 2>/dev/null; then
 		echo "[$__ticket_id] Cleanup in progress detected, resetting timeout counter"
+		echo "[$__ticket_id] Waiting for cleanup to finish..."
+		sleep 11
 		# Reset the start time to give the cleanup process time to complete
 		wait_for_lock $__branch $__queue_file $__ticket_id $(date +%s)
 		return
