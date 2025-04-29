@@ -70,8 +70,67 @@ cleanup_mutex_branch() {
 	__branch=$1
 	__queue_file=$2
 	__ticket_id=$3
+	__cleanup_id="cleanup-$(date +%s)-$(( $RANDOM % 1000 ))"
 
-	echo "[$__ticket_id] Cleaning up mutex branch $__branch"
+	echo "[$__ticket_id] Attempting to clean up mutex branch $__branch"
+
+	# Try to acquire cleanup lock using Git's atomic operations
+	update_branch $__branch
+
+	# Check if cleanup is already in progress by another process
+	if grep -q "^CLEANUP_IN_PROGRESS:" "$__queue_file" 2>/dev/null; then
+		echo "[$__ticket_id] Cleanup already in progress by another process, waiting..."
+		sleep 5
+		# Retry cleanup
+		cleanup_mutex_branch $__branch $__queue_file $__ticket_id
+		return
+	fi
+
+	# Mark cleanup in progress with our unique ID
+	echo "CLEANUP_IN_PROGRESS:$__cleanup_id" > "$__queue_file"
+
+	git add $__queue_file
+	git commit -m "[$__ticket_id] Mark cleanup in progress" --quiet
+
+	# Try to push - if this fails, another process might be cleaning up
+	set +e # allow errors
+	git push --set-upstream origin $__branch --quiet
+	__push_result=$?
+	set -e
+
+	if [ ! $__push_result -eq 0 ]; then
+		echo "[$__ticket_id] Failed to acquire cleanup lock, checking if another process is actually cleaning up..."
+
+		# Pull the latest state to see if another job has the cleanup lock
+		git fetch origin $__branch --quiet
+		git reset --hard origin/$__branch --quiet
+
+		# Check if cleanup is still in progress by another process
+		if grep -q "^CLEANUP_IN_PROGRESS:" "$__queue_file" 2>/dev/null; then
+			# Extract the timestamp from the cleanup ID to check how old it is
+			__cleanup_timestamp=$(grep "^CLEANUP_IN_PROGRESS:" "$__queue_file" | sed -E 's/CLEANUP_IN_PROGRESS:cleanup-([0-9]+).*/\1/')
+			__current_timestamp=$(date +%s)
+
+			# If we can extract a timestamp and it's more than 5 minutes old, assume the cleanup job failed
+			if [ -n "$__cleanup_timestamp" ] && [ $((__current_timestamp - __cleanup_timestamp)) -gt 300 ]; then
+				echo "[$__ticket_id] Found stale cleanup lock (>5 minutes old), assuming previous cleanup job failed. Taking over cleanup..."
+				# Continue with cleanup (don't return)
+			else
+				echo "[$__ticket_id] Another process is actively cleaning up. We will not cleanup ourselves..."
+				return
+			fi
+		else
+			echo "[$__ticket_id] No active cleanup lock found despite push failure. Retrying..."
+			sleep 5
+			# Retry cleanup
+			cleanup_mutex_branch $__branch $__queue_file $__ticket_id
+			return
+		fi
+	fi
+
+	echo "[$__ticket_id] Acquired cleanup lock, waiting 10 seconds for others to observer the cleanup lock"
+	sleep 10
+	echo "[$__ticket_id] Proceeding with cleanup"
 
 	# Create a new orphan branch to replace the current one
 	git switch --orphan gh-action-mutex/temp-branch-$(date +%s) --quiet
@@ -137,7 +196,7 @@ wait_for_lock() {
 		echo "[$__ticket_id] $__queue_file unexpectedly empty, requeuing for the lock"
 		# Requeue ourselves
 		enqueue $__branch $__queue_file $__ticket_id
-		wait_for_lock $__branch $__mutex_queue_file $__ticket_id $(date +%s)
+		wait_for_lock $__branch $__queue_file $__ticket_id $(date +%s)
 	fi
 }
 # Remove from the queue, when locked by it or just enqueued
