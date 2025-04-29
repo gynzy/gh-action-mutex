@@ -85,6 +85,7 @@ cleanup_mutex_branch() {
 			# Continue with cleanup (don't return)
 		else
 			echo "[$__ticket_id] Another process is actively cleaning up. We will not cleanup ourselves..."
+			sleep 11
 			return
 		fi
 	fi
@@ -120,6 +121,7 @@ cleanup_mutex_branch() {
 				# Continue with cleanup (don't return)
 			else
 				echo "[$__ticket_id] Another process is actively cleaning up. We will not cleanup ourselves..."
+				sleep 11
 				return
 			fi
 		else
@@ -131,7 +133,7 @@ cleanup_mutex_branch() {
 		fi
 	fi
 
-	echo "[$__ticket_id] Acquired cleanup lock, waiting 10 seconds for others to observer the cleanup lock"
+	echo "[$__ticket_id] Acquired cleanup lock, waiting 10 seconds for others to observe the cleanup lock"
 	sleep 10
 	echo "[$__ticket_id] Proceeding with cleanup"
 
