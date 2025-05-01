@@ -183,7 +183,7 @@ wait_for_lock() {
 			return
 		else
 			echo "[$__ticket_id] cleanup-mutex-on-timeout is disabled, exiting with error"
-			exit 1
+			exit_failure_with_information $__branch
 		fi
 	fi
 
@@ -256,4 +256,14 @@ dequeue() {
 		sleep 1
 		dequeue $@
 	fi
+}
+
+exit_failure_with_information() {
+	__branch=$1
+
+	echo "If you are sure that no other process is using this mutex, you can delete the branch by running the following commands to clean up the mutex branch:"
+	echo "git -C $ARG_CHECKOUT_LOCATION checkout $__branch"
+	echo "git -C $ARG_CHECKOUT_LOCATION push --force origin HEAD:$__branch"
+	echo "git -C $ARG_CHECKOUT_LOCATION checkout -"
+	exit 1
 }
