@@ -41,7 +41,7 @@ jobs:
           sleep 5
 ```
 
-### Timeout and Cleanup
+### Timeout
 
 You can specify a timeout for how long to wait for the mutex before giving up:
 
