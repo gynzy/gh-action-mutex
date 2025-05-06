@@ -41,11 +41,33 @@ jobs:
           sleep 5
 ```
 
+### Timeout and Cleanup
+
+You can specify a timeout for how long to wait for the mutex before giving up:
+
+```yaml
+jobs:
+  run_with_timeout:
+    runs-on: ubuntu-latest
+    name: Mutex with timeout
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up mutex
+        uses: ben-z/gh-action-mutex@v1.0.0-alpha.10
+        with:
+          timeout: 60  # Wait for 60 seconds before timing out and giving up
+      - run: |
+          echo "I am protected!"
+          sleep 5
+```
+
+If the timeout is reached, the action will fail by default.
+
 More options such as using a different repo to store the mutex (which allows sharing a mutex between jobs from arbitrary repos) or using different access tokens can be found in [action.yml](./action.yml).
 
 ### GitHub Enterprise Server
 
-It might be necessary to adjust the GitHub Server URL in case you are using a GitHub Enterprise Server. You can adjust the server URL by providing `github_server` input to the action. Please make sure to not include the `https://`. 
+It might be necessary to adjust the GitHub Server URL in case you are using a GitHub Enterprise Server. You can adjust the server URL by providing `github_server` input to the action. Please make sure to not include the `https://`.
 
 ## Motivation
 
