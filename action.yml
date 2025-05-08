@@ -21,6 +21,10 @@ inputs:
     description: 'The branch to use for the mutex'
     required: false
     default: 'gh-mutex'
+  timeout:
+    description: 'How long to wait for the mutex (in seconds)'
+    required: false
+    default: "1200"
   debug:
     description: 'Print debug output'
     required: false
@@ -44,6 +48,7 @@ runs:
     ARG_REPO_TOKEN: ${{ inputs.repo-token }}
     ARG_DEBUG: ${{ inputs.debug }}
     ARG_TICKET_ID_SUFFIX: ${{ inputs.ticket-id-suffix}}
+    ARG_TIMEOUT: ${{ inputs.timeout }}
   entrypoint: '/scripts/lock.sh'
   post-entrypoint: '/scripts/unlock.sh'
 

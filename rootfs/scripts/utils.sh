@@ -66,10 +66,25 @@ enqueue() {
 #   $1: branch
 #   $2: queue_file
 #   $3: ticket_id
+#   $4: repository
+#   $5: timeout (optional)
+#   $6: start_time (optional)
 wait_for_lock() {
 	__branch=$1
 	__queue_file=$2
 	__ticket_id=$3
+	__repository=$4
+	__timeout=$5
+	__start_time=${6:-$(date +%s)}
+
+	__current_time=$(date +%s)
+	__elapsed_time=$((__current_time - __start_time))
+
+	# Check if we've exceeded the timeout
+	if [ -n "$__timeout" ] && [ $__elapsed_time -ge $__timeout ]; then
+		echo "[$__ticket_id] Timeout reached trying to obtain the lock after $__elapsed_time seconds"
+		exit_failure_with_information $__branch $__repository
+	fi
 
 	update_branch $__branch
 
@@ -77,9 +92,9 @@ wait_for_lock() {
 	if [ -s $__queue_file ]; then
 		cur_lock=$(head -n 1 $__queue_file)
 		if [ "$cur_lock" != "$__ticket_id" ]; then
-			echo "[$__ticket_id] Waiting for lock - Current lock assigned to [$cur_lock]"
+			echo "[$__ticket_id] Waiting for lock - Current lock assigned to [$cur_lock] (elapsed time: $__elapsed_time seconds)"
 			sleep 5
-			wait_for_lock $@
+			wait_for_lock $__branch $__queue_file $__ticket_id $__repository $__timeout $__start_time
 		fi
 	else
 		echo "[$__ticket_id] $__queue_file unexpectedly empty, continuing"
@@ -129,3 +144,17 @@ dequeue() {
 	fi
 }
 
+# Print information on how to unlock the mutex and exit with an error
+# args:
+#   $1: branch
+#   $2: repository
+exit_failure_with_information() {
+	__branch=$1
+	__repository=$2
+
+	echo "If you are sure that no other process is using this mutex, you can delete the branch by running the following commands to clean up the mutex branch:"
+	echo "The lock branch: $__branch exists in this repository: $__repository"
+	echo "git push origin --delete $__branch"
+	echo "git branch -D $__branch"
+	exit 1
+}
